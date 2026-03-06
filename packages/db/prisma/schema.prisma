@@ -1,0 +1,260 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [uuidOssp(map: "uuid-ossp")]
+}
+
+enum UserRole {
+  CUSTOMER
+  KITCHEN_OWNER
+  GROUP_ADMIN
+  RIDER
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  CONFIRMED
+  PREPARING
+  READY_FOR_PICKUP
+  DISPATCHED
+  DELIVERED
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum StockChangeReason {
+  MANUAL
+  ORDER
+  RESTOCK
+  CORRECTION
+  EXPIRED_WASTE
+}
+
+enum DeliveryMode {
+  SELF_PICKUP
+  HOME_DELIVERY
+}
+
+model KitchenGroup {
+  id          String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String
+  slug        String    @unique
+  logoUrl     String?
+  description String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  kitchens    Kitchen[]
+}
+
+model Kitchen {
+  id             String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  groupId        String       @db.Uuid
+  group          KitchenGroup @relation(fields: [groupId], references: [id])
+  name           String
+  description    String?
+  upiId          String
+  upiName        String
+  coverImageUrl  String?
+  isOpen         Boolean      @default(false)
+  avgPrepMins    Int          @default(20)
+  minOrderAmount Decimal      @default(0)
+  ownerId        String       @db.Uuid
+  owner          User         @relation("KitchenOwner", fields: [ownerId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  menuCategories MenuCategory[]
+  menuItems      MenuItem[]
+  carts          Cart[]
+  orders         Order[]
+
+  @@index([groupId])
+  @@index([ownerId])
+}
+
+model MenuCategory {
+  id           String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  kitchenId    String     @db.Uuid
+  kitchen      Kitchen    @relation(fields: [kitchenId], references: [id])
+  name         String
+  displayOrder Int        @default(0)
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  menuItems    MenuItem[]
+
+  @@index([kitchenId])
+}
+
+model MenuItem {
+  id          String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  kitchenId   String       @db.Uuid
+  kitchen     Kitchen      @relation(fields: [kitchenId], references: [id])
+  categoryId  String       @db.Uuid
+  category    MenuCategory @relation(fields: [categoryId], references: [id])
+  name        String
+  description String?
+  price       Decimal
+  imageUrl    String?
+  isVeg       Boolean      @default(false)
+  isAvailable Boolean      @default(true)
+  stockCount  Int          @default(-1) // -1 means unlimited / untracked stock
+  prepTimeMins Int         @default(15)
+  tags        String[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  stockLogs   StockLog[]
+
+  @@index([kitchenId])
+  @@index([categoryId])
+}
+
+model User {
+  id        String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  phone     String    @unique
+  name      String
+  email     String?
+  role      UserRole
+  fcmToken  String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  addresses        Address[]
+  cart             Cart?
+  orders           Order[]       @relation("CustomerOrders")
+  riderOrders      Order[]       @relation("RiderOrders")
+  ownedKitchens    Kitchen[]     @relation("KitchenOwner")
+  stockLogsRecorded StockLog[]   @relation("StockLogRecorder")
+  notifications    Notification[]
+}
+
+model Address {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id])
+  label     String
+  line1     String
+  line2     String?
+  city      String
+  pincode   String
+  lat       Float?
+  lng       Float?
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  orders    Order[]
+
+  @@index([userId])
+}
+
+model Cart {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId    String   @unique @db.Uuid
+  user      User     @relation(fields: [userId], references: [id])
+  kitchenId String   @db.Uuid
+  kitchen   Kitchen  @relation(fields: [kitchenId], references: [id])
+  items     Json
+  updatedAt DateTime @updatedAt
+}
+
+model Order {
+  id                String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId            String        @db.Uuid
+  user              User          @relation("CustomerOrders", fields: [userId], references: [id])
+  kitchenId         String        @db.Uuid
+  kitchen           Kitchen       @relation(fields: [kitchenId], references: [id])
+  itemsSnapshot     Json
+  subtotal          Decimal
+  deliveryFee       Decimal       @default(0)
+  total             Decimal
+  deliveryMode      DeliveryMode
+  status            OrderStatus   @default(PENDING_PAYMENT)
+  paymentStatus     PaymentStatus @default(PENDING)
+  paymentLinkId     String?
+  paymentLinkUrl    String?
+  upiRef            String?
+  deliveryAddressId String?       @db.Uuid
+  deliveryAddress   Address?      @relation(fields: [deliveryAddressId], references: [id])
+  riderId           String?       @db.Uuid
+  rider             User?         @relation("RiderOrders", fields: [riderId], references: [id])
+  otp               String?       @db.Char(4) // Store hashed OTP; plain value only used transiently in application layer
+  notes             String?
+  placedAt          DateTime
+  confirmedAt       DateTime?
+  readyAt           DateTime?
+  pickedAt          DateTime?
+  deliveredAt       DateTime?
+  cancelledAt       DateTime?
+  cancelReason      String?
+  retryCount        Int           @default(0)
+
+  payment   Payment?
+  stockLogs StockLog[]
+
+  @@index([userId])
+  @@index([kitchenId])
+  @@index([status])
+  @@index([kitchenId, status])
+}
+
+model Payment {
+  id               String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  orderId          String        @unique @db.Uuid
+  order            Order         @relation(fields: [orderId], references: [id])
+  amount           Decimal
+  upiId            String
+  gateway          String
+  gatewayPaymentId String?       @unique
+  status           PaymentStatus
+  gatewayPayload   Json?
+  initiatedAt      DateTime
+  verifiedAt       DateTime?
+  failedAt         DateTime?
+
+  @@index([orderId])
+}
+
+model StockLog {
+  id         String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  menuItemId String            @db.Uuid
+  menuItem   MenuItem          @relation(fields: [menuItemId], references: [id])
+  changeQty  Int
+  beforeQty  Int
+  afterQty   Int
+  reason     StockChangeReason
+  orderId    String?           @db.Uuid
+  order      Order?            @relation(fields: [orderId], references: [id])
+  note       String?
+  recordedBy String            @db.Uuid
+  recorder   User              @relation("StockLogRecorder", fields: [recordedBy], references: [id])
+  recordedAt DateTime
+
+  @@index([menuItemId])
+  @@index([orderId])
+}
+
+model Notification {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id])
+  type      String
+  title     String
+  body      String
+  isRead    Boolean  @default(false)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+}
