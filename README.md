@@ -6,7 +6,7 @@ A Turborepo monorepo for the CloudKitchen OS platform — a modern cloud kitchen
 
 | App | Stack | Port |
 |-----|-------|------|
-| `apps/customer-web` | Next.js 14 (App Router) + Tailwind CSS + shadcn/ui | 3000 |
+| `apps/customer-web` | Next.js 15 (App Router) + Tailwind CSS + shadcn/ui | 3000 |
 | `apps/kitchen-dashboard` | React 18 + Vite + Tailwind CSS | 3001 |
 | `apps/admin-panel` | React 18 + Vite + Tailwind CSS | 3002 |
 
@@ -88,7 +88,7 @@ All apps start in parallel:
 ```
 cloudkitchen-os/
 ├── apps/
-│   ├── customer-web/        # Next.js 14 customer-facing storefront
+│   ├── customer-web/        # Next.js 15 customer-facing storefront
 │   ├── kitchen-dashboard/   # React 18 kitchen operations dashboard
 │   └── admin-panel/         # React 18 admin management panel
 ├── packages/
