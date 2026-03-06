@@ -1,0 +1,163 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---- Enums ----
+
+enum UserRole {
+  CUSTOMER
+  KITCHEN_STAFF
+  ADMIN
+  DELIVERY_DRIVER
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum NotificationChannel {
+  PUSH
+  SMS
+  EMAIL
+}
+
+// ---- Models ----
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  phone     String?
+  password  String
+  role      UserRole @default(CUSTOMER)
+  fcmToken  String?
+
+  orders        Order[]        @relation("CustomerOrders")
+  notifications Notification[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+model MenuCategory {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+  sortOrder   Int     @default(0)
+
+  items MenuItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("menu_categories")
+}
+
+model MenuItem {
+  id                     String  @id @default(cuid())
+  name                   String
+  description            String
+  price                  Decimal @db.Decimal(10, 2)
+  imageUrl               String?
+  available              Boolean @default(true)
+  preparationTimeMinutes Int     @default(15)
+
+  categoryId String
+  category   MenuCategory @relation(fields: [categoryId], references: [id])
+
+  orderItems OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("menu_items")
+}
+
+model Order {
+  id           String      @id @default(cuid())
+  orderNumber  String      @unique @default(cuid())
+  status       OrderStatus @default(PENDING)
+  subtotal     Decimal     @db.Decimal(10, 2)
+  tax          Decimal     @db.Decimal(10, 2)
+  deliveryFee  Decimal     @db.Decimal(10, 2)
+  total        Decimal     @db.Decimal(10, 2)
+
+  specialInstructions      String?
+  estimatedDeliveryMinutes Int?
+
+  customerId String
+  customer   User   @relation("CustomerOrders", fields: [customerId], references: [id])
+
+  items           OrderItem[]
+  deliveryAddress DeliveryAddress?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id         String  @id @default(cuid())
+  quantity   Int
+  unitPrice  Decimal @db.Decimal(10, 2)
+  totalPrice Decimal @db.Decimal(10, 2)
+  notes      String?
+
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@map("order_items")
+}
+
+model DeliveryAddress {
+  id         String  @id @default(cuid())
+  street     String
+  city       String
+  state      String
+  postalCode String
+  country    String
+  latitude   Float?
+  longitude  Float?
+
+  orderId String @unique
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("delivery_addresses")
+}
+
+model Notification {
+  id      String              @id @default(cuid())
+  title   String
+  body    String
+  channel NotificationChannel
+  read    Boolean             @default(false)
+  data    Json?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}
